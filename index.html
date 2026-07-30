@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <title>Poster AR — Sample</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    #start-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      text-align: center;
+      padding: 24px;
+      background: #111;
+      color: #fff;
+    }
+    #start-overlay h1 {
+      margin: 0;
+      font-size: 28px;
+    }
+    #start-overlay p {
+      margin: 0;
+      max-width: 320px;
+      line-height: 1.5;
+      color: #bbb;
+    }
+    #start-btn {
+      margin-top: 8px;
+      padding: 14px 40px;
+      font-size: 18px;
+      font-weight: 600;
+      color: #111;
+      background: #fff;
+      border: none;
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    #start-btn:active {
+      transform: scale(0.97);
+    }
+    #fallback-link {
+      margin-top: 4px;
+      color: #888;
+      font-size: 14px;
+      text-decoration: underline;
+    }
+    #hint {
+      position: fixed;
+      bottom: 100px;
+      left: 0;
+      right: 0;
+      z-index: 500;
+      display: none;
+      text-align: center;
+      pointer-events: none;
+    }
+    #hint span {
+      display: inline-block;
+      padding: 8px 16px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.6);
+      color: #fff;
+      font-size: 14px;
+    }
+    #controls {
+      position: fixed;
+      bottom: 24px;
+      left: 0;
+      right: 0;
+      z-index: 600;
+      display: none;
+      justify-content: center;
+      gap: 12px;
+    }
+    #controls.visible {
+      display: flex;
+    }
+    .ctrl-btn {
+      width: 56px;
+      height: 56px;
+      border: none;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.65);
+      color: #fff;
+      font-size: 22px;
+      line-height: 1;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      backdrop-filter: blur(4px);
+    }
+    .ctrl-btn:active {
+      transform: scale(0.92);
+      background: rgba(0, 0, 0, 0.85);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Layar pembuka: wajib ada 1x tap dari user supaya browser mengizinkan
+       kamera + video bersuara (kebijakan autoplay di HP) -->
+  <div id="start-overlay">
+    <h1>Poster AR</h1>
+    <p>Tekan tombol di bawah, izinkan akses kamera, lalu arahkan kamera ke gambar target.</p>
+    <button id="start-btn">Mulai Scan</button>
+    <a id="fallback-link" href="./assets/video.mp4">AR tidak jalan? Tonton videonya langsung</a>
+  </div>
+
+  <div id="hint"><span>Arahkan kamera ke gambar target</span></div>
+
+  <!-- Tombol kontrol video: muncul setelah target pertama kali terdeteksi -->
+  <div id="controls">
+    <button class="ctrl-btn" id="replay-btn" title="Ulang dari awal">&#8634;</button>
+    <button class="ctrl-btn" id="play-btn" title="Play / Pause">&#10074;&#10074;</button>
+    <button class="ctrl-btn" id="mute-btn" title="Suara on/off">&#128266;</button>
+  </div>
+
+  <a-scene
+    id="ar-scene"
+    mindar-image="imageTargetSrc: ./assets/targets.mind; autoStart: false; uiLoading: no; uiScanning: yes; uiError: no"
+    color-space="sRGB"
+    renderer="colorManagement: true"
+    vr-mode-ui="enabled: false"
+    device-orientation-permission-ui="enabled: false">
+
+    <a-assets>
+      <video
+        id="ar-video"
+        src="./assets/video.mp4"
+        preload="auto"
+        loop
+        muted
+        playsinline
+        webkit-playsinline
+        crossorigin="anonymous"></video>
+    </a-assets>
+
+    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+    <a-entity id="target" mindar-image-target="targetIndex: 0">
+      <!-- width 1 = selebar gambar target; tinggi mengikuti rasio video (320x176) -->
+      <a-video src="#ar-video" position="0 0 0" width="1" height="0.55"></a-video>
+    </a-entity>
+  </a-scene>
+
+  <script>
+    const sceneEl = document.querySelector('#ar-scene');
+    const video = document.querySelector('#ar-video');
+    const target = document.querySelector('#target');
+    const overlay = document.querySelector('#start-overlay');
+    const startBtn = document.querySelector('#start-btn');
+    const hint = document.querySelector('#hint');
+    const controls = document.querySelector('#controls');
+    const playBtn = document.querySelector('#play-btn');
+    const muteBtn = document.querySelector('#mute-btn');
+    const replayBtn = document.querySelector('#replay-btn');
+
+    const ICON_PLAY = '▶';
+    const ICON_PAUSE = '❘❘';
+    const ICON_SOUND_ON = '\u{1F50A}';
+    const ICON_SOUND_OFF = '\u{1F507}';
+
+    // Kalau user pause manual, jangan di-play otomatis lagi saat target ketemu
+    let userPaused = false;
+
+    startBtn.addEventListener('click', async () => {
+      // "Priming" video di dalam gesture user, supaya nanti boleh play otomatis
+      try {
+        await video.play();
+        video.pause();
+        video.currentTime = 0;
+      } catch (e) {
+        // Kalau gagal pun tidak apa-apa, video tetap dicoba play saat target ketemu
+      }
+      video.muted = false;
+
+      overlay.style.display = 'none';
+      hint.style.display = 'block';
+
+      const arSystem = sceneEl.systems['mindar-image-system'];
+      arSystem.start();
+    });
+
+    playBtn.addEventListener('click', () => {
+      if (video.paused) {
+        userPaused = false;
+        video.play();
+      } else {
+        userPaused = true;
+        video.pause();
+      }
+    });
+
+    muteBtn.addEventListener('click', () => {
+      video.muted = !video.muted;
+      muteBtn.innerHTML = video.muted ? ICON_SOUND_OFF : ICON_SOUND_ON;
+    });
+
+    replayBtn.addEventListener('click', () => {
+      userPaused = false;
+      video.currentTime = 0;
+      video.play();
+    });
+
+    // Ikon play/pause selalu mengikuti keadaan video yang sebenarnya
+    video.addEventListener('play', () => { playBtn.innerHTML = ICON_PAUSE; });
+    video.addEventListener('pause', () => { playBtn.innerHTML = ICON_PLAY; });
+
+    target.addEventListener('targetFound', () => {
+      hint.style.display = 'none';
+      controls.classList.add('visible');
+      if (!userPaused) video.play();
+    });
+
+    target.addEventListener('targetLost', () => {
+      hint.style.display = 'block';
+      video.pause();
+    });
+  </script>
+</body>
+</html>
