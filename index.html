@@ -39,6 +39,24 @@
       line-height: 1.5;
       color: #bbb;
     }
+    #target-preview {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    #target-preview img {
+      width: 160px;
+      max-width: 55vw;
+      border-radius: 12px;
+      border: 2px solid #fff;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    }
+    #target-preview span {
+      font-size: 13px;
+      color: #888;
+    }
     #start-btn {
       margin-top: 8px;
       padding: 14px 40px;
@@ -119,7 +137,11 @@
        kamera + video bersuara (kebijakan autoplay di HP) -->
   <div id="start-overlay">
     <h1>Poster AR</h1>
-    <p>Tekan tombol di bawah, izinkan akses kamera, lalu arahkan kamera ke gambar target.</p>
+    <p>Tekan tombol di bawah, izinkan akses kamera, lalu arahkan kamera ke gambar ini di poster.</p>
+    <div id="target-preview">
+      <img src="./assets/target-image.png" alt="Gambar target yang harus di-scan">
+      <span>👆 Cari gambar ini di poster</span>
+    </div>
     <button id="start-btn">Mulai Scan</button>
     <a id="fallback-link" href="./assets/video.mp4">AR tidak jalan? Tonton videonya langsung</a>
   </div>
