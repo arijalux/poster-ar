@@ -77,6 +77,20 @@
       font-size: 14px;
       text-decoration: underline;
     }
+    #camera-error {
+      display: none;
+      max-width: 320px;
+      padding: 12px 16px;
+      border-radius: 12px;
+      background: rgba(255, 80, 80, 0.15);
+      border: 1px solid rgba(255, 80, 80, 0.4);
+      color: #ffb3b3;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    #camera-error.visible {
+      display: block;
+    }
     #hint {
       position: fixed;
       bottom: 100px;
@@ -143,6 +157,7 @@
       <span>👆 Cari gambar ini di poster</span>
     </div>
     <button id="start-btn">Mulai Scan</button>
+    <p id="camera-error"></p>
     <a id="fallback-link" href="./assets/video.mp4">AR tidak jalan? Tonton videonya langsung</a>
   </div>
 
@@ -190,6 +205,7 @@
     const target = document.querySelector('#target');
     const overlay = document.querySelector('#start-overlay');
     const startBtn = document.querySelector('#start-btn');
+    const cameraError = document.querySelector('#camera-error');
     const hint = document.querySelector('#hint');
     const controls = document.querySelector('#controls');
     const playBtn = document.querySelector('#play-btn');
@@ -204,7 +220,52 @@
     // Kalau user pause manual, jangan di-play otomatis lagi saat target ketemu
     let userPaused = false;
 
+    function isInAppBrowser() {
+      // Browser bawaan Instagram/WhatsApp/Line/Messenger dll di iOS sering
+      // memblokir getUserMedia sama sekali walau user sudah tap "izinkan"
+      return /FBAN|FBAV|Instagram|Line\/|MicroMessenger/i.test(navigator.userAgent || '');
+    }
+
+    function isIOS() {
+      return /iP(hone|od|ad)/.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    }
+
+    function showCameraError(err) {
+      console.error('Camera error:', err);
+      let msg;
+      if (isInAppBrowser()) {
+        msg = 'Link ini dibuka di dalam app (Instagram/WhatsApp/dll), dan iOS sering memblokir kamera di situ. Tekan menu "•••" lalu pilih "Buka di Safari", lalu coba lagi.';
+      } else if (err && err.name === 'NotAllowedError') {
+        msg = isIOS()
+          ? 'Izin kamera ditolak. Buka Settings → Safari → Camera → Allow, atau tekan ikon "AA"/gembok di address bar → Website Settings → Camera → Allow, lalu muat ulang halaman ini.'
+          : 'Izin kamera ditolak. Buka pengaturan situs di browser, izinkan Camera, lalu muat ulang halaman ini.';
+      } else if (err && err.name === 'NotFoundError') {
+        msg = 'Kamera tidak ditemukan di perangkat ini.';
+      } else {
+        msg = 'Kamera tidak bisa diakses. Pastikan kamu membuka link ini langsung di Safari/Chrome, lalu coba lagi.';
+      }
+      cameraError.textContent = msg;
+      cameraError.classList.add('visible');
+    }
+
     startBtn.addEventListener('click', async () => {
+      cameraError.classList.remove('visible');
+
+      // PENTING untuk iOS Safari: getUserMedia harus jadi hal PERTAMA yang
+      // dipanggil di dalam tap user. Kalau ada proses async lain (fetch file
+      // targets.mind, dsb) berjalan duluan, iOS diam-diam menolak izin kamera
+      // tanpa menampilkan dialog sama sekali -> layar AR jadi putih kosong.
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' }
+        });
+        stream.getTracks().forEach((t) => t.stop());
+      } catch (err) {
+        showCameraError(err);
+        return;
+      }
+
       // "Priming" video di dalam gesture user, supaya nanti boleh play otomatis
       try {
         await video.play();
